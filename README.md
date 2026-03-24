@@ -201,7 +201,7 @@ php artisan key:generate
 # DB_PORT=5432
 # DB_DATABASE=gamecrm
 # DB_USERNAME=postgres
-# DB_PASSWORD=tu_password
+# DB_PASSWORD=Paugarpablo610
 
 # 6. Ejecutar migraciones y seeders
 php artisan migrate --seed
@@ -218,9 +218,9 @@ php artisan serve
 
 | Rol | Email | Contraseña |
 |---|---|---|
-| Admin | admin@gamecrm.com | password |
-| Manager | manager@gamecrm.com | password |
-| Player | player@gamecrm.com | password |
+| Admin | admin@gmail.com | password |
+| Manager | manager@gmail.com | password |
+| Player | player@gmail.com | password |
 
 ---
 

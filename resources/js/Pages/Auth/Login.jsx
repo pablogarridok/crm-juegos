@@ -48,7 +48,7 @@ export default function Login() {
                                     autoFocus
                                 />
                                 {errors.email && (
-                                    <p className="text-red-400 text-xs mt-1">{errors.email}</p>
+                                    <p className="text-red-400 text-xs mt-1">Email incorrecto</p>
                                 )}
                             </div>
 

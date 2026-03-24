@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Runner 3D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #101018; }
+
+    #app { width: 100%; height: 100%; position: relative; }
+    canvas { width: 100% !important; height: 100% !important; display: block; }
+
+    #hud {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      color: white;
+      font-family: system-ui, Arial, sans-serif;
+      text-shadow: 0 1px 2px rgba(0,0,0,.6);
+      user-select: none;
+    }
+    .hud-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      background: rgba(0,0,0,.35);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    #gameover {
+      display: none;
+      margin-top: 10px;
+      background: rgba(0,0,0,.55);
+      padding: 12px;
+      border-radius: 12px;
+    }
+    #gameover h2 { margin-bottom: 8px; }
+    #hint {
+      margin-top: 10px;
+      background: rgba(0,0,0,.35);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      background: #5a5aff;
+      color: white;
+    }
+    button:hover { background: #7a7aff; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="canvas"></canvas>
+
+    <div id="hud">
+      <div class="hud-row">
+        <span><b>Puntuación:</b> <span id="score">0</span></span>
+        <span><b>Récord:</b> <span id="best">0</span></span>
+        <span><b>Velocidad:</b> <span id="speed">7.0</span></span>
+      </div>
+      <div id="gameover">
+        <h2>Game Over</h2>
+        <button onclick="restartGame()">Reiniciar</button>
+        <p style="margin-top:8px;font-size:12px;">← → o A/D para moverte · Espacio para saltar</p>
+      </div>
+      <div id="hint">
+        ← → o A/D para moverte · Espacio para saltar
+        <button style="padding:6px 10px;font-size:12px;" onclick="restartGame()">Reiniciar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three'
+
+    // ── GameCRM Client ────────────────────────────────────────────────────────
+    class GameCRMClient {
+      constructor() {
+        this.token = null
+        this.gameId = null
+        this.apiBase = null
+        this.sessionId = null
+        this._ready = false
+      }
+
+      init() {
+        return new Promise((resolve) => {
+          if (window.self === window.top) {
+            console.warn('[GameCRM] Fuera del iframe. Usa loginWithCredentials().')
+            resolve(false)
+            return
+          }
+          window.addEventListener('message', (event) => {
+            if (event.data?.type === 'GAMECRM_INIT') {
+              this.token   = event.data.token
+              this.gameId  = event.data.gameId
+              this.apiBase = event.data.apiBase
+              this._ready  = true
+              console.log('[GameCRM] Inicializado. Game ID:', this.gameId)
+              resolve(true)
+            }
+          }, { once: true })
+        })
+      }
+
+      async startSession() {
+        if (!this._ready) return
+        const res  = await this._post('/sessions', { game_id: this.gameId })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message ?? 'No se pudo iniciar la sesión')
+        this.sessionId = data.session_id
+        console.log('[GameCRM] Sesión iniciada:', this.sessionId)
+      }
+
+      async endSession(score, resultData = {}) {
+        if (!this._ready || !this.sessionId) return
+        const res  = await this._post(`/sessions/${this.sessionId}/end`, { score, result_data: resultData })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message ?? 'No se pudo finalizar la sesión')
+        console.log('[GameCRM] Sesión finalizada. Score:', score)
+        this.sessionId = null
+        return data
+      }
+
+      _headers() {
+        return {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type':  'application/json',
+          'Accept':        'application/json',
+        }
+      }
+      _post(path, body) {
+        return fetch(`${this.apiBase}${path}`, {
+          method:  'POST',
+          headers: this._headers(),
+          body:    JSON.stringify(body),
+        })
+      }
+    }
+
+    // ── Estado global ────────────────────────────────────────────────────────
+    const client = new GameCRMClient()
+
+    let scene, camera, renderer, clock
+    let animationId = null
+    let player = null
+    const obstacles = []
+    let ground = null
+    const keys = new Set()
+    let obstacleTimer = 0
+
+    let score = 0
+    let best  = Number(localStorage.getItem('bestScore') ?? 0)
+    let speed = 7
+    let gameOver = false
+
+    const LANES   = [-2, 0, 2]
+    const SPAWN_Z = -35
+    const DESPAWN_Z = 10
+    const PLAYER_Z  = 0
+    const GRAVITY   = -20
+    const JUMP_V    = 9.5
+
+    const playerBox = new THREE.Box3()
+    const tempBox   = new THREE.Box3()
+
+    // ── HUD ──────────────────────────────────────────────────────────────────
+    const elScore    = document.getElementById('score')
+    const elBest     = document.getElementById('best')
+    const elSpeed    = document.getElementById('speed')
+    const elGameover = document.getElementById('gameover')
+    const elHint     = document.getElementById('hint')
+
+    function updateHUD() {
+      elScore.textContent = score
+      elBest.textContent  = best
+      elSpeed.textContent = speed.toFixed(1)
+    }
+
+    function showGameOver() {
+      elGameover.style.display = 'block'
+      elHint.style.display     = 'none'
+    }
+
+    function hideGameOver() {
+      elGameover.style.display = 'none'
+      elHint.style.display     = 'inline-flex'
+    }
+
+    // ── Init Three.js ─────────────────────────────────────────────────────────
+    function initThree() {
+      const canvas = document.getElementById('canvas')
+
+      scene = new THREE.Scene()
+      scene.background = new THREE.Color(0x101018)
+      scene.fog = new THREE.Fog(0x101018, 12, 55)
+
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200)
+      camera.position.set(0, 4.2, 8)
+      camera.lookAt(0, 1, -6)
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+      renderer.setSize(window.innerWidth, window.innerHeight)
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.shadowMap.enabled = true
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.55))
+      const dir = new THREE.DirectionalLight(0xffffff, 1.1)
+      dir.position.set(6, 10, 6)
+      dir.castShadow = true
+      scene.add(dir)
+
+      // Suelo
+      const groundGeo = new THREE.BoxGeometry(8, 0.3, 80)
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.9 })
+      ground = new THREE.Mesh(groundGeo, groundMat)
+      ground.position.set(0, -0.15, -20)
+      ground.receiveShadow = true
+      scene.add(ground)
+
+      // Raíles
+      const railGeo = new THREE.BoxGeometry(0.15, 0.4, 80)
+      const railMat = new THREE.MeshStandardMaterial({ color: 0x5a5aff, roughness: 0.6 })
+      const leftRail  = new THREE.Mesh(railGeo, railMat)
+      const rightRail = new THREE.Mesh(railGeo, railMat)
+      leftRail.position.set(-4, 0.1, -20)
+      rightRail.position.set(4, 0.1, -20)
+      scene.add(leftRail, rightRail)
+
+      // Jugador
+      const pGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9)
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.2, roughness: 0.4 })
+      player = new THREE.Mesh(pGeo, pMat)
+      player.castShadow = true
+      player.position.set(0, 0.45, PLAYER_Z)
+      player.userData = { targetX: 0, isJumping: false, vy: 0, groundY: 0.45 }
+      scene.add(player)
+
+      clock = new THREE.Clock()
+
+      window.addEventListener('resize', onResize)
+      window.addEventListener('keydown', onKeyDown)
+      window.addEventListener('keyup',   e => keys.delete(e.code))
+    }
+
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(window.innerWidth, window.innerHeight)
+    }
+
+    function onKeyDown(e) {
+      keys.add(e.code)
+      if (e.code === 'ArrowLeft'  || e.code === 'KeyA') moveLane(-1)
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') moveLane(1)
+      if (e.code === 'Space') jump()
+    }
+
+    function moveLane(dir) {
+      if (!player || gameOver) return
+      const i = LANES.indexOf(player.userData.targetX)
+      player.userData.targetX = LANES[THREE.MathUtils.clamp(i + dir, 0, 2)]
+    }
+
+    function jump() {
+      if (!player || gameOver || player.userData.isJumping) return
+      player.userData.isJumping = true
+      player.userData.vy = JUMP_V
+    }
+
+    function spawnObstacle() {
+      const geo  = new THREE.BoxGeometry(0.9, 0.9, 0.9)
+      const mat  = new THREE.MeshStandardMaterial({ color: 0xff4d4d, metalness: 0.1, roughness: 0.5 })
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.castShadow = true
+      mesh.position.set(LANES[Math.floor(Math.random() * 3)], 0.45, SPAWN_Z)
+      obstacles.push(mesh)
+      scene.add(mesh)
+    }
+
+    function updatePlayer(dt) {
+      player.position.x = THREE.MathUtils.damp(player.position.x, player.userData.targetX, 12, dt)
+      if (player.userData.isJumping) {
+        player.userData.vy += GRAVITY * dt
+        player.position.y += player.userData.vy * dt
+        if (player.position.y <= player.userData.groundY) {
+          player.position.y = player.userData.groundY
+          player.userData.isJumping = false
+          player.userData.vy = 0
+        }
+      }
+    }
+
+    function updateWorld(dt) {
+      speed = Math.min(50, speed + dt * 0.25)
+      obstacleTimer += dt
+      if (obstacleTimer >= 0.9) { obstacleTimer = 0; spawnObstacle() }
+
+      const dz = speed * dt
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        obstacles[i].position.z += dz
+        if (obstacles[i].position.z > DESPAWN_Z) {
+          scene.remove(obstacles[i])
+          obstacles.splice(i, 1)
+        }
+      }
+      ground.position.z += dz
+      if (ground.position.z > 0) ground.position.z = -20
+    }
+
+    function checkCollisions() {
+      playerBox.setFromObject(player)
+      for (const o of obstacles) {
+        tempBox.setFromObject(o)
+        if (playerBox.intersectsBox(tempBox)) { triggerGameOver(); return }
+      }
+    }
+
+    async function triggerGameOver() {
+      gameOver = true
+      if (score > best) {
+        best = score
+        localStorage.setItem('bestScore', String(best))
+      }
+      showGameOver()
+      updateHUD()
+
+      try {
+        await client.endSession(score, { speed_reached: Math.round(speed) })
+      } catch (e) {
+        console.warn('[GameCRM] endSession falló:', e.message)
+      }
+    }
+
+    function animate() {
+      animationId = requestAnimationFrame(animate)
+      const dt = clock.getDelta()
+      if (!gameOver) {
+        updatePlayer(dt)
+        updateWorld(dt)
+        checkCollisions()
+        score += Math.floor(dt * 10)
+        updateHUD()
+      }
+      renderer.render(scene, camera)
+    }
+
+    function resetGame() {
+      score = 0
+      speed = 7
+      gameOver = false
+      obstacleTimer = 0
+
+      for (const o of obstacles) scene.remove(o)
+      obstacles.length = 0
+
+      player.position.set(0, 0.45, PLAYER_Z)
+      player.userData.targetX   = 0
+      player.userData.isJumping = false
+      player.userData.vy        = 0
+      ground.position.z = -20
+
+      hideGameOver()
+      updateHUD()
+    }
+
+    window.restartGame = async function () {
+      resetGame()
+      try {
+        await client.startSession()
+      } catch (e) {
+        console.warn('[GameCRM] startSession falló:', e.message)
+      }
+    }
+
+    async function main() {
+      initThree()
+      resetGame()
+      animate()
+
+      try {
+        await client.init()
+        await client.startSession()
+      } catch (e) {
+        console.warn('[GameCRM] init falló:', e.message)
+      }
+    }
+
+    main()
+  </script>
+</body>
+</html>

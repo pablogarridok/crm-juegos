@@ -1,17 +1,4 @@
-/**
- * GameCRM API Client para Three.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Este archivo se incluye en tu juego Three.js para comunicarte con la API
- * de Laravel. No modifica la lógica del juego; solo gestiona la comunicación.
- *
- * Uso:
- *   import { GameCRMClient } from './gamecrm-client.js'
- *
- *   const client = new GameCRMClient()
- *   await client.init()                        // Espera el token de Laravel
- *   await client.startSession()               // Inicia partida
- *   await client.endSession(score, extraData) // Finaliza partida
- */
+
 
 export class GameCRMClient {
     constructor() {
@@ -22,15 +9,9 @@ export class GameCRMClient {
         this._ready   = false
     }
 
-    /**
-     * Espera el mensaje postMessage de Laravel con el token Sanctum.
-     * La vista Player/Play.jsx envía este mensaje cuando carga el iframe.
-     *
-     * Uso: await client.init()
-     */
+
     init() {
         return new Promise((resolve) => {
-            // Si el juego está en modo standalone (fuera de iframe), usa login manual
             if (window.self === window.top) {
                 console.warn('[GameCRM] No estás dentro del iframe de GameCRM. Usa loginWithCredentials().')
                 resolve(false)
@@ -50,9 +31,7 @@ export class GameCRMClient {
         })
     }
 
-    /**
-     * Login manual con email/password (para pruebas fuera del iframe).
-     */
+
     async loginWithCredentials(email, password, apiBase = '/api') {
         this.apiBase = apiBase
         const res  = await fetch(`${this.apiBase}/auth/token`, {
@@ -67,10 +46,7 @@ export class GameCRMClient {
         return data.user
     }
 
-    /**
-     * Inicia una sesión de juego en la API de Laravel.
-     * Llama a este método cuando el jugador empieza a jugar.
-     */
+
     async startSession(gameId = null) {
         this._assertReady()
         const res = await this._post('/sessions', {
@@ -83,13 +59,6 @@ export class GameCRMClient {
         return this.sessionId
     }
 
-    /**
-     * Finaliza la sesión activa con la puntuación obtenida.
-     * Llama a este método cuando el jugador termina la partida (victoria, derrota, tiempo agotado...).
-     *
-     * @param {number} score - Puntuación final
-     * @param {object} resultData - Datos adicionales (nivel alcanzado, tiempo, etc.)
-     */
     async endSession(score, resultData = {}) {
         this._assertReady()
         if (!this.sessionId) throw new Error('[GameCRM] No hay sesión activa. Llama a startSession() primero.')
@@ -105,9 +74,7 @@ export class GameCRMClient {
         return data
     }
 
-    /**
-     * Obtiene la lista de juegos publicados.
-     */
+
     async getGames() {
         this._assertReady()
         const res  = await this._get('/games')
@@ -115,7 +82,6 @@ export class GameCRMClient {
         return data.data
     }
 
-    // ── Privados ────────────────────────────────────────────────────────────────
 
     _assertReady() {
         if (!this._ready || !this.token) {
@@ -143,37 +109,3 @@ export class GameCRMClient {
         })
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Ejemplo de integración en tu juego Three.js:
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// import * as THREE from 'three'
-// import { GameCRMClient } from './gamecrm-client.js'
-//
-// const client = new GameCRMClient()
-// let score = 0
-//
-// async function main() {
-//     // 1. Inicializar cliente (espera el token de Laravel)
-//     await client.init()
-//
-//     // 2. Iniciar la sesión cuando empieza la partida
-//     await client.startSession()
-//
-//     // 3. Tu lógica de juego Three.js aquí...
-//     const scene    = new THREE.Scene()
-//     const camera   = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-//     const renderer = new THREE.WebGLRenderer()
-//     // ...
-//
-//     // 4. Al terminar la partida, enviar resultado
-//     function onGameOver() {
-//         client.endSession(score, {
-//             level_reached: 5,
-//             enemies_killed: 23,
-//         })
-//     }
-// }
-//
-// main()

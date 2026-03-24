@@ -34,29 +34,28 @@ class DatabaseSeeder extends Seeder
         // ── 2. Crear usuarios de prueba ───────────────────────────────────────
         $adminUser = User::create([
             'name'     => 'Admin Principal',
-            'email'    => 'admin@gamecrm.com',
+            'email'    => 'admin@gmail.com',
             'password' => Hash::make('password'),
             'role_id'  => $admin->id,
         ]);
 
         $managerUser = User::create([
-            'name'     => 'Gestor Demo',
-            'email'    => 'manager@gamecrm.com',
+            'name'     => 'Gestor ',
+            'email'    => 'manager@gmail.com',
             'password' => Hash::make('password'),
             'role_id'  => $manager->id,
         ]);
 
         $playerUser = User::create([
             'name'     => 'Jugador Demo',
-            'email'    => 'player@gamecrm.com',
+            'email'    => 'player@gmail.com',
             'password' => Hash::make('password'),
             'role_id'  => $player->id,
         ]);
 
-        // ── 3. Crear juegos de ejemplo ────────────────────────────────────────
         Game::create([
             'created_by'    => $managerUser->id,
-            'title'         => 'Space Explorer',
+            'title'         => 'Runner3D',
             'description'   => 'Explora el espacio en este juego 3D desarrollado con Three.js.',
             'status'        => Game::STATUS_PUBLISHED,
             'game_url'      => '/games/space-explorer/index.html',
