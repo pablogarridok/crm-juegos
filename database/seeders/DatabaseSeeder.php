@@ -47,7 +47,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $playerUser = User::create([
-            'name'     => 'Jugador Demo',
+            'name'     => 'Jugador',
             'email'    => 'player@gmail.com',
             'password' => Hash::make('password'),
             'role_id'  => $player->id,
@@ -58,7 +58,7 @@ class DatabaseSeeder extends Seeder
             'title'         => 'Runner3D',
             'description'   => 'Explora el espacio en este juego 3D desarrollado con Three.js.',
             'status'        => Game::STATUS_PUBLISHED,
-            'game_url'      => '/games/space-explorer/index.html',
+            'game_url'      => '/games/runner3d/index.html',
             'thumbnail_url' => null,
         ]);
 
