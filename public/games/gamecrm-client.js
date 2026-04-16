@@ -56,6 +56,9 @@ export class GameCRMClient {
         if (!res.ok) throw new Error(data.message ?? 'No se pudo iniciar la sesión')
         this.sessionId = data.session_id
         console.log('[GameCRM] Sesión iniciada:', this.sessionId)
+
+        window.parent?.postMessage({ type: 'GAMECRM_SESSION_STARTED', session_id: this.sessionId }, '*')
+
         return this.sessionId
     }
 
@@ -71,6 +74,9 @@ export class GameCRMClient {
         if (!res.ok) throw new Error(data.message ?? 'No se pudo finalizar la sesión')
         console.log('[GameCRM] Sesión finalizada. Score:', score, '| Duración:', data.duration_seconds, 's')
         this.sessionId = null
+
+        window.parent?.postMessage({ type: 'GAMECRM_SESSION_ENDED' }, '*')
+
         return data
     }
 

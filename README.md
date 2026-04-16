@@ -181,48 +181,60 @@ await fetch(`/api/sessions/${sessionId}/end`, {
 
 ## Instalación y puesta en marcha
 
+### Requisitos previos
+- PHP 8.2+
+- Composer 2.x
+- Node.js 20+
+- PostgreSQL 15+
+
 ```bash
 # 1. Clonar el repositorio
-git clone <repo-url> && cd gamecrm
+git clone  && cd gamecrm
 
-# 2. Instalar dependencias PHP
+# 2. Instalar dependencias PHP y JS
 composer install
-
-# 3. Instalar dependencias JS
 npm install
 
-# 4. Configurar entorno
+# 3. Configurar entorno
 cp .env.example .env
 php artisan key:generate
 
-# 5. Configurar la base de datos en .env
+# 4. Editar .env con tus credenciales de PostgreSQL
 # DB_CONNECTION=pgsql
 # DB_HOST=127.0.0.1
 # DB_PORT=5432
 # DB_DATABASE=gamecrm
 # DB_USERNAME=postgres
-# DB_PASSWORD=Paugarpablo610
+# DB_PASSWORD=tu_password   
+
+
 
 # 6. Ejecutar migraciones y seeders
 php artisan migrate --seed
 
 # 7. Compilar frontend
 npm run build   # producción
-npm run dev     # desarrollo
+npm run dev     # desarrollo (en terminal separada)
 
 # 8. Iniciar servidor
 php artisan serve
 ```
 
-### Credenciales iniciales (seeder)
+### Usuarios de prueba (creados por el seeder)
+| Rol     | Email                  | Contraseña |
+|---------|------------------------|------------|
+| Admin   | admin@gamecrm.com      | password   |
+| Manager | manager@gamecrm.com    | password   |
+| Player  | player@gamecrm.com     | password   |
 
-| Rol | Email | Contraseña |
-|---|---|---|
-| Admin | admin@gmail.com | password |
-| Manager | manager@gmail.com | password |
-| Player | player@gmail.com | password |
-
----
+### Si migrate --seed falla con "tabla ya existe"
+Significa que hay tablas huérfanas de una instalación anterior. Solución:
+```bash
+php artisan tinker
+DB::statement('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+exit
+php artisan migrate --seed
+```
 
 ## Endpoints de la API
 
