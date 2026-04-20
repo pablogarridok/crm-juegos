@@ -3,6 +3,8 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Player\FaceController;
+use App\Http\Controllers\Player\ChatController;
 use App\Http\Controllers\Manager\GameController as ManagerGameController;
 use App\Http\Controllers\Player\GameController as PlayerGameController;
 use Illuminate\Support\Facades\Route;
@@ -34,14 +36,25 @@ Route::middleware('auth')->group(function () {
 // ─── Jugador ──────────────────────────────────────────────────────────────────
 // Solo usuarios con rol 'player' acceden a estas rutas.
 
+// ─── Jugador ──────────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'role:player,manager,admin'])
     ->prefix('play')
     ->name('player.')
     ->group(function () {
-        Route::get('/',           [PlayerGameController::class, 'index'])  ->name('dashboard');
-        Route::get('/history',    [PlayerGameController::class, 'history'])->name('history');
-        Route::get('/{game}',     [PlayerGameController::class, 'play'])   ->name('play');
+        Route::get('/',        [PlayerGameController::class, 'index'])  ->name('dashboard');
+        Route::get('/history', [PlayerGameController::class, 'history'])->name('history');
+        Route::get('/{game}',  [PlayerGameController::class, 'play'])   ->name('play');
     });
+
+// ─── Reconocimiento facial ────────────────────────────────────────────────────
+Route::middleware(['auth', 'role:player,manager,admin'])->group(function () {
+    Route::get('/face',          [FaceController::class, 'index'])      ->name('face.index');
+    Route::post('/face/enroll',  [FaceController::class, 'enroll'])     ->name('face.enroll');
+    Route::post('/face/verify',  [FaceController::class, 'verify'])     ->name('face.verify');
+    Route::delete('/face/photo', [FaceController::class, 'deletePhoto'])->name('face.delete');
+    Route::get('/chat/{game}/messages',  [ChatController::class, 'index']);
+    Route::post('/chat/{game}/messages', [ChatController::class, 'store']);
+});
 
 // ─── Manager (gestión de juegos) ──────────────────────────────────────────────
 // Solo admin y manager.

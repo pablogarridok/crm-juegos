@@ -4,6 +4,8 @@
 
 GameCRM es una plataforma de juegos construida con Laravel como núcleo del sistema. Funciona como un CRM que gestiona usuarios, roles, juegos y sesiones de partida, mientras expone una API reutilizable para que los juegos desarrollados en Three.js puedan comunicarse con el servidor.
 
+El proyecto incorpora tres módulos avanzados: **reconocimiento facial** mediante un microservicio Python en Docker, **detección de emociones en tiempo real** en el navegador, y **chat en tiempo real** con WebSockets a través de Laravel Reverb.
+
 ---
 
 ## Tecnologías utilizadas
@@ -11,12 +13,18 @@ GameCRM es una plataforma de juegos construida con Laravel como núcleo del sist
 | Tecnología | Función en el sistema |
 |---|---|
 | **Laravel 11** | Backend principal. Gestiona rutas, autenticación, autorización, modelos Eloquent, migraciones y la lógica del CRM. |
-| **PostgreSQL** | Base de datos relacional. Almacena usuarios, roles, juegos, sesiones y eventos de partida. |
-| **Eloquent ORM** | Abstrae las consultas a la base de datos. Define las relaciones entre modelos (User, Role, Game, GameSession). |
-| **Inertia.js** | Puente entre Laravel y React. Permite usar React como capa de vistas sin convertir el proyecto en una SPA independiente. Laravel sigue controlando rutas y autenticación. |
+| **PostgreSQL** | Base de datos relacional. Almacena usuarios, roles, juegos, sesiones, eventos emocionales y mensajes de chat. |
+| **Eloquent ORM** | Abstrae las consultas a la base de datos. Define las relaciones entre modelos. |
+| **Inertia.js** | Puente entre Laravel y React. Permite usar React como capa de vistas sin convertir el proyecto en una SPA independiente. |
 | **React** | Librería para la interfaz del CRM. Gestiona el panel de admin/gestor y las vistas del jugador. |
 | **Tailwind CSS** | Framework de utilidades CSS para estilar el frontend. |
-| **Laravel Sanctum** | Gestión de tokens para la autenticación de la API. Los juegos (clientes Three.js) se autentican con Sanctum. |
+| **Laravel Sanctum** | Gestión de tokens para la autenticación de la API. |
+| **Laravel Reverb** | Servidor WebSocket oficial de Laravel. Gestiona el chat en tiempo real. |
+| **Laravel Echo + Pusher.js** | Cliente JavaScript que escucha eventos de Reverb en el navegador. |
+| **Python + FastAPI** | Microservicio de reconocimiento facial que corre en Docker. |
+| **DeepFace** | Librería Python para comparación de rostros. |
+| **face-api.js** | Librería JavaScript para detección de emociones directamente en el navegador. |
+| **Docker** | Contenerización del microservicio de reconocimiento facial. |
 | **Three.js** | Motor de juegos en el cliente (proyecto externo). Se comunica con Laravel exclusivamente a través de la API. |
 
 ---
@@ -26,170 +34,329 @@ GameCRM es una plataforma de juegos construida con Laravel como núcleo del sist
 ```
 gamecrm/
 ├── app/
+│   ├── Events/
+│   │   └── MessageSent.php         # Evento broadcast del chat
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── Auth/           # Registro, login, logout
-│   │   │   ├── Admin/          # Gestión de usuarios y roles
-│   │   │   ├── Manager/        # CRUD de juegos
-│   │   │   ├── Player/         # Lista y acceso a juegos publicados
-│   │   │   └── Api/            # Endpoints de la API para los juegos
-│   │   ├── Middleware/
-│   │   │   └── RoleMiddleware   # Protege rutas según rol
-│   │   └── Requests/           # Form Requests para validación
-│   ├── Models/
-│   │   ├── User.php
-│   │   ├── Role.php
-│   │   ├── Game.php
-│   │   └── GameSession.php
-│   └── Policies/
-│       └── GamePolicy.php      # Autorización basada en roles
-├── database/
-│   ├── migrations/             # Estructura versionada de la BD
-│   └── seeders/                # Datos iniciales (roles, admin)
+│   │   │   ├── Auth/               # Registro, login, logout
+│   │   │   ├── Admin/              # Gestión de usuarios y roles
+│   │   │   ├── Manager/            # CRUD de juegos
+│   │   │   ├── Player/
+│   │   │   │   ├── FaceController.php   # Reconocimiento facial
+│   │   │   │   └── ChatController.php   # Chat en tiempo real
+│   │   │   └── Api/                # Endpoints de la API para los juegos
+│   │   └── Middleware/
+│   │       └── RoleMiddleware       # Protege rutas según rol
+│   └── Models/
+│       ├── User.php
+│       ├── Role.php
+│       ├── Game.php
+│       ├── GameSession.php
+│       └── ChatMessage.php         # Modelo de mensajes de chat
+├── database/migrations/
+│   ├── ..._add_face_photo_to_users_table.php
+│   ├── ..._create_chat_messages_table.php
+│   └── ...                         # Migraciones base
+├── face-recognition/               # Microservicio Python
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── main.py                     # FastAPI + DeepFace
+│   └── requirements.txt
 ├── routes/
-│   ├── web.php                 # Rutas del CRM (vistas Inertia)
-│   └── api.php                 # Rutas de la API REST
+│   ├── web.php                     # Rutas del CRM (vistas Inertia)
+│   └── api.php                     # Rutas de la API REST
 └── resources/js/
-    ├── Pages/                  # Vistas React (Inertia)
-    │   ├── Admin/
-    │   ├── Manager/
-    │   ├── Player/
-    │   └── Auth/
-    └── Components/             # Componentes reutilizables
+    ├── Pages/
+    │   └── Player/
+    │       ├── Play.jsx            # Juego + detección emocional + chat
+    │       └── Face.jsx            # Enrolamiento y verificación facial
+    └── Components/
+        └── Layout/
+            └── AppLayout.jsx
 ```
 
 ---
 
 ## Base de datos
 
-Se utiliza **PostgreSQL** por su robustez en sistemas que gestionan datos relacionales con múltiples entidades (usuarios, sesiones, eventos).
-
 ### Entidades principales
 
 - **roles** — Define los tipos de usuario: `admin`, `manager`, `player`
-- **users** — Usuarios del sistema. Cada usuario tiene un `role_id`
-- **games** — Juegos gestionados por el CRM. Incluye título, descripción, estado de publicación, URL/ruta del juego y el usuario creador
-- **game_sessions** — Registra cada partida: quién jugó, a qué juego, cuándo empezó/terminó, duración y resultado
+- **users** — Usuarios del sistema. Incluye `face_photo_path` (nullable) para el reconocimiento facial
+- **games** — Juegos gestionados por el CRM
+- **game_sessions** — Registra cada partida
+- **chat_messages** — Mensajes del chat asociados a un juego
 
 ### Relaciones Eloquent
 
 ```
-Role 1──N User
-User 1──N Game (creador)
-User 1──N GameSession
-Game 1──N GameSession
+Role        1──N  User
+User        1──N  Game (creador)
+User        1──N  GameSession
+User        1──N  ChatMessage
+Game        1──N  GameSession
+Game        1──N  ChatMessage
 ```
 
 ---
 
-## Autenticación
+## Autenticación y roles
 
 Se implementa con el sistema nativo de Laravel (`Auth`) y **Laravel Sanctum** para la API.
-
-- Las rutas del CRM (web.php) usan sesiones de Laravel con `auth` middleware
-- Las rutas de la API (api.php) usan tokens Sanctum con `auth:sanctum` middleware
-- El juego Three.js obtiene un token al iniciar sesión y lo incluye en cada llamada a la API
-
-**No se permiten accesos directos ni simulaciones.** Todas las rutas protegidas verifican la identidad del usuario en el servidor.
-
----
-
-## Roles y autorización
-
-Tres roles con responsabilidades distintas:
 
 | Rol | Capacidades |
 |---|---|
 | `admin` | Gestionar usuarios, asignar roles, configuración global |
 | `manager` | Crear/editar/publicar juegos, ver estadísticas |
-| `player` | Ver juegos publicados, jugar, consultar sus resultados |
-
-El control de roles se implementa en dos niveles:
-1. **Middleware `RoleMiddleware`** — Protege grupos de rutas completos
-2. **Policies (`GamePolicy`)** — Controla acciones específicas sobre recursos
-
-Un jugador que conozca la URL del panel de gestión recibirá un `403 Forbidden`.
+| `player` | Ver juegos publicados, jugar, usar el chat, gestionar seguridad facial |
 
 ---
 
-## Separación Web / API
+## Módulo 1 — Reconocimiento facial (Python + Docker)
 
-### web.php (CRM)
-- Devuelve respuestas **Inertia** (componentes React)
-- Gestiona sesiones, autenticación y navegación
-- Rutas: `/dashboard`, `/games`, `/admin/users`, etc.
+### Concepto
 
-### api.php (API REST)
-- Devuelve **JSON estructurado** únicamente
-- Sin vistas, sin sesiones web
-- Protegida con Sanctum tokens
-- Rutas: `/api/games`, `/api/sessions`, `/api/sessions/{id}/end`
+Laravel no hace reconocimiento facial. Laravel coordina, valida y decide. El reconocimiento lo hace un microservicio independiente en Python.
 
----
+El reconocimiento facial se usa como **verificación adicional de identidad**, no como sustituto del login. El usuario sigue autenticándose con su cuenta y contraseña habituales.
 
-## Gestión de juegos (CRUD)
+### Flujo
 
-El panel de gestión está disponible para `admin` y `manager`. Permite:
+```
+Usuario logueado → /face → "Registrar cara"
+    → cámara activa → captura foto → POST /face/enroll
+    → Laravel guarda imagen en storage/app/face-photos/
+    → [Laravel NO analiza la imagen]
 
-- **Crear** un juego (título, descripción, URL del juego, estado)
-- **Editar** los datos del juego
-- **Publicar / Despublicar** con un toggle de estado
-- **Previsualizar** el juego dentro del contexto de la plataforma
-- **Eliminar** un juego (solo admin)
+Usuario → "Verificar identidad"
+    → cámara → captura imagen actual → POST /face/verify
+    → Laravel recupera la foto registrada del usuario
+    → Laravel envía AMBAS fotos al microservicio Python
+    → Python/DeepFace compara → devuelve { match, distance }
+    → Laravel interpreta el resultado y responde al navegador
+```
 
-Todas las acciones validan los datos con **Form Requests** de Laravel y comprueban permisos antes de ejecutarse.
+El navegador **nunca** se comunica directamente con el microservicio Python. El control de seguridad siempre pasa por Laravel.
 
----
+### Instalación del microservicio
 
-## Experiencia del jugador
+**1. Crear la carpeta en la raíz del proyecto:**
+```bash
+mkdir face-recognition
+```
 
-1. El jugador inicia sesión y ve la lista de juegos **publicados** (filtrado en servidor)
-2. Selecciona un juego → Laravel carga la vista con el juego integrado (no es una página aislada)
-3. El juego (Three.js) se inicializa y llama a `POST /api/sessions` para registrar el inicio
-4. Durante la partida puede enviar eventos a `POST /api/sessions/{id}/events`
-5. Al terminar, llama a `POST /api/sessions/{id}/end` con el resultado final
+Copia dentro: `Dockerfile`, `main.py`, `requirements.txt`, `docker-compose.yml`
 
----
+**2. Construir y arrancar el contenedor:**
+```bash
+cd face-recognition
+docker-compose up -d --build
+```
 
-## Integración con Three.js
+La primera vez tarda varios minutos porque descarga los modelos de DeepFace. Verifica que funciona:
+```bash
+curl http://localhost:8001/health
+# → {"status":"ok","service":"face-recognition"}
+```
 
-El juego vive fuera de Laravel (puede ser una URL externa o un asset estático). Laravel solo guarda la URL de acceso. La comunicación es **exclusivamente mediante la API**:
+**3. Añadir la variable de entorno en `.env`:**
+```env
+FACE_SERVICE_URL=http://localhost:8001
+```
 
-```javascript
-// Ejemplo en el juego Three.js
-const token = localStorage.getItem('sanctum_token');
+**4. Migrar la base de datos:**
+```bash
+php artisan migrate
+```
 
-// Iniciar sesión de juego
-const session = await fetch('/api/sessions', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ game_id: gameId })
+**5. Añadir `face_photo_path` al modelo `User`:**
+
+En `app/Models/User.php`:
+```php
+protected $fillable = [
+    'name', 'email', 'password', 'role_id', 'is_active',
+    'face_photo_path',   // ← añadir
+];
+```
+
+**6. Añadir rutas en `routes/web.php`:**
+```php
+use App\Http\Controllers\Player\FaceController;
+
+Route::middleware(['auth', 'role:player,manager,admin'])->group(function () {
+    Route::get('/face',          [FaceController::class, 'index']);
+    Route::post('/face/enroll',  [FaceController::class, 'enroll']);
+    Route::post('/face/verify',  [FaceController::class, 'verify']);
+    Route::delete('/face/photo', [FaceController::class, 'deletePhoto']);
 });
+```
 
-// Finalizar partida con resultado
-await fetch(`/api/sessions/${sessionId}/end`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: JSON.stringify({ score: 1500, duration_seconds: 180 })
-});
+**7. Añadir enlace en el menú (`AppLayout.jsx`):**
+```js
+player: [
+    { href: '/play',         label: 'Juegos',          icon: '🎮' },
+    { href: '/play/history', label: 'Mi historial',     icon: '📊' },
+    { href: '/face',         label: 'Seguridad facial', icon: '🔐' },
+],
+```
+
+**8. Compilar el frontend:**
+```bash
+npm run build
 ```
 
 ---
 
-## Instalación y puesta en marcha
+## Módulo 2 — Detección de emociones (face-api.js en el navegador)
+
+### Concepto
+
+La detección de emociones ocurre **completamente en el navegador**, sin enviar imágenes ni vídeo al servidor. Se usa face-api.js para analizar expresiones faciales mientras el usuario juega.
+
+Laravel solo recibe datos ya interpretados: la emoción dominante, el nivel de confianza y el instante de la sesión. No recibe datos biométricos en bruto.
+
+### Flujo
+
+```
+Usuario entra en /play/{game}
+    → face-api.js carga modelos desde CDN
+    → el juego (iframe) inicia una sesión → GAMECRM_SESSION_STARTED
+    → se solicita permiso de webcam
+    → cada 3 segundos: captura frame → detecta expresión
+    → POST /api/sessions/{id}/emotions con { emotion, confidence, session_second }
+    → Laravel guarda el evento en PostgreSQL
+```
+
+Las emociones se guardan asociadas a la sesión de juego, no al usuario de forma permanente.
+
+### Datos que se registran
+
+| Campo | Descripción |
+|---|---|
+| `emotion` | Emoción dominante: `happy`, `sad`, `angry`, `neutral`, etc. |
+| `confidence` | Confianza del modelo (0.0 – 1.0) |
+| `session_second` | Segundo dentro de la sesión en que se detectó |
+
+### Integración en el frontend
+
+La detección se inicia automáticamente cuando el juego emite el mensaje `GAMECRM_SESSION_STARTED` a través de `postMessage`. La webcam aparece como una pequeña ventana en la esquina inferior derecha del juego, y el estado de detección se muestra en la barra superior.
+
+No se requiere instalación adicional. La librería se carga desde CDN en tiempo de ejecución.
+
+---
+
+## Módulo 3 — Chat en tiempo real (Laravel Reverb + WebSockets)
+
+### Concepto
+
+El chat está contextualizado por juego: solo participan usuarios que están viendo ese juego. Los mensajes se persisten en base de datos y se emiten en tiempo real mediante WebSockets.
+
+Laravel controla quién puede conectarse a cada canal y quién puede enviar mensajes. La seguridad no se elimina por usar tiempo real.
+
+### Flujo
+
+```
+Usuario entra en /play/{game}
+    → Play.jsx abre el panel de chat (botón 💬)
+    → Laravel Echo se conecta al canal "game.{game_id}"
+    → Se cargan los últimos mensajes del historial
+
+Usuario escribe un mensaje → Enter o botón ➤
+    → POST /chat/{game}/messages
+    → Laravel guarda en chat_messages
+    → Laravel dispara evento MessageSent → Reverb lo emite por WebSocket
+    → Todos los usuarios conectados al canal reciben el mensaje
+    → El propio usuario lo ve por optimistic update (sin esperar al WS)
+```
+
+### Instalación
+
+**1. Instalar Laravel Reverb:**
+```bash
+php artisan install:broadcasting
+```
+Cuando pregunte el driver, elige **reverb**.
+
+**2. Instalar dependencias JS:**
+```bash
+npm install --save-dev laravel-echo pusher-js
+```
+
+**3. Migrar la base de datos:**
+```bash
+php artisan migrate
+```
+
+**4. Añadir rutas en `routes/web.php`:**
+```php
+use App\Http\Controllers\Player\ChatController;
+
+Route::middleware(['auth', 'role:player,manager,admin'])->group(function () {
+    Route::get('/chat/{game}/messages',  [ChatController::class, 'index']);
+    Route::post('/chat/{game}/messages', [ChatController::class, 'store']);
+});
+```
+
+**5. Configurar Echo en `resources/js/app.jsx`** (al inicio del archivo, antes de `createInertiaApp`):
+```js
+import Echo from 'laravel-echo';
+import Pusher from 'pusher-js';
+
+window.Pusher = Pusher;
+window.Echo = new Echo({
+    broadcaster: 'reverb',
+    key: import.meta.env.VITE_REVERB_APP_KEY,
+    wsHost: import.meta.env.VITE_REVERB_HOST,
+    wsPort: parseInt(import.meta.env.VITE_REVERB_PORT) || 80,
+    wssPort: parseInt(import.meta.env.VITE_REVERB_PORT) || 443,
+    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
+    enabledTransports: ['ws', 'wss'],
+});
+```
+
+**6. Compilar el frontend:**
+```bash
+npm run build
+```
+
+### Variables de entorno para Reverb
+
+```env
+BROADCAST_CONNECTION=reverb
+
+REVERB_APP_ID=tu-app-id
+REVERB_APP_KEY=tu-app-key
+REVERB_APP_SECRET=tu-app-secret
+REVERB_HOST=localhost
+REVERB_PORT=8081
+REVERB_SERVER_PORT=8081
+REVERB_SCHEME=http
+
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+VITE_REVERB_HOST="${REVERB_HOST}"
+VITE_REVERB_PORT="${REVERB_PORT}"
+VITE_REVERB_SCHEME="${REVERB_SCHEME}"
+```
+
+> **Nota sobre el puerto:** El puerto 8080 puede estar ocupado en Windows. Si `php artisan reverb:start` falla con un error de permisos de socket, establece `REVERB_PORT=8081` y `REVERB_SERVER_PORT=8081` en el `.env` y vuelve a intentarlo.
+
+---
+
+## Instalación completa del proyecto
 
 ### Requisitos previos
+
 - PHP 8.2+
 - Composer 2.x
 - Node.js 20+
 - PostgreSQL 15+
+- Docker Desktop (para el módulo de reconocimiento facial)
+
+### Pasos
 
 ```bash
 # 1. Clonar el repositorio
-git clone  && cd gamecrm
+git clone <url> && cd gamecrm
 
 # 2. Instalar dependencias PHP y JS
 composer install
@@ -199,42 +366,58 @@ npm install
 cp .env.example .env
 php artisan key:generate
 
-# 4. Editar .env con tus credenciales de PostgreSQL
-# DB_CONNECTION=pgsql
-# DB_HOST=127.0.0.1
-# DB_PORT=5432
-# DB_DATABASE=gamecrm
-# DB_USERNAME=postgres
-# DB_PASSWORD=tu_password   
+# 4. Editar .env con tus credenciales de PostgreSQL y Reverb
 
-
-
-# 6. Ejecutar migraciones y seeders
+# 5. Ejecutar migraciones y seeders
 php artisan migrate --seed
 
-# 7. Compilar frontend
-npm run build   # producción
-npm run dev     # desarrollo (en terminal separada)
+# 6. Compilar frontend
+npm run build
 
-# 8. Iniciar servidor
-php artisan serve
+# 7. Arrancar el microservicio de reconocimiento facial
+cd face-recognition && docker-compose up -d --build && cd ..
 ```
 
-### Usuarios de prueba (creados por el seeder)
-| Rol     | Email                  | Contraseña |
-|---------|------------------------|------------|
-| Admin   | admin@gamecrm.com      | password   |
-| Manager | manager@gamecrm.com    | password   |
-| Player  | player@gamecrm.com     | password   |
+### Arrancar el entorno de desarrollo
+
+Necesitas **cuatro terminales**:
+
+```bash
+# Terminal 1 — Servidor Laravel
+php artisan serve
+
+# Terminal 2 — WebSocket Reverb
+php artisan reverb:start
+
+# Terminal 3 — Queue worker (para eventos broadcast)
+php artisan queue:work
+
+# Terminal 4 — Vite (solo en desarrollo)
+npm run dev
+```
+
+> En producción, usa `ShouldBroadcastNow` en el evento `MessageSent` para evitar depender de la cola, o mantén el queue worker corriendo como servicio.
 
 ### Si migrate --seed falla con "tabla ya existe"
-Significa que hay tablas huérfanas de una instalación anterior. Solución:
+
 ```bash
 php artisan tinker
 DB::statement('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
 exit
 php artisan migrate --seed
 ```
+
+---
+
+## Usuarios de prueba
+
+| Rol | Email | Contraseña |
+|---|---|---|
+| Admin | admin@gamecrm.com | password |
+| Manager | manager@gamecrm.com | password |
+| Player | player@gamecrm.com | password |
+
+---
 
 ## Endpoints de la API
 
@@ -245,17 +428,27 @@ php artisan migrate --seed
 | `POST` | `/api/sessions` | Sanctum | Iniciar sesión de juego |
 | `POST` | `/api/sessions/{id}/end` | Sanctum | Finalizar sesión con resultado |
 | `GET` | `/api/sessions` | Sanctum | Historial de sesiones del usuario |
+| `POST` | `/api/sessions/{id}/emotions` | Sanctum | Registrar emoción detectada |
 | `POST` | `/api/auth/token` | — | Obtener token Sanctum |
 
 ---
 
 ## Decisiones de diseño
 
+**¿Por qué el reconocimiento facial en un microservicio Python y no en Laravel?**
+Las librerías de visión artificial tienen dependencias nativas pesadas que no encajan en el ciclo de petición web de Laravel. Docker permite aislarlas en un contenedor que se ejecuta igual en desarrollo y producción sin contaminar el entorno PHP.
+
+**¿Por qué la detección de emociones en el navegador y no en el servidor?**
+El navegador ya tiene acceso a la webcam y puede procesar imágenes localmente. Enviar vídeo al servidor generaría una carga innecesaria y comprometería la privacidad. Laravel solo recibe datos ya interpretados.
+
 **¿Por qué Inertia en lugar de Blade puro?**
-Inertia permite crear un CRM con interfaces dinámicas (tablas, modales, formularios reactivos) sin sacrificar el control de Laravel sobre rutas y autenticación. Es más mantenible que una SPA separada para este caso de uso.
+Inertia permite crear interfaces dinámicas sin sacrificar el control de Laravel sobre rutas y autenticación. Es más mantenible que una SPA separada para este caso de uso.
 
 **¿Por qué PostgreSQL?**
-El sistema gestiona relaciones entre múltiples entidades con datos temporales (sesiones, eventos). PostgreSQL ofrece mejor soporte para este tipo de consultas y mayor integridad referencial que SQLite.
+El sistema gestiona relaciones entre múltiples entidades con datos temporales. PostgreSQL ofrece mejor soporte para este tipo de consultas y mayor integridad referencial que SQLite.
 
 **¿Por qué Sanctum y no Passport?**
-Sanctum es suficiente para este caso: tokens simples por usuario para clientes SPA y aplicaciones cliente como Three.js. Passport añade complejidad innecesaria (OAuth2) para este proyecto.
+Sanctum es suficiente para tokens simples por usuario para clientes SPA y aplicaciones cliente como Three.js. Passport añade complejidad innecesaria (OAuth2) para este proyecto.
+
+**¿Por qué Laravel Reverb y no Pusher externo?**
+Reverb es la solución oficial de Laravel para WebSockets. Se integra con el sistema de eventos del framework, respeta la autenticación existente y evita dependencias externas de pago.

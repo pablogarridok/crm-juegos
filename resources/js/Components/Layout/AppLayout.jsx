@@ -14,6 +14,7 @@ const NAV_ITEMS = {
     player: [
         { href: '/play', label: 'Juegos', icon: '🎮' },
         { href: '/play/history', label: 'Mi historial', icon: '📊' },
+        { href: '/face',         label: 'Seguridad facial',  icon: '🔐' },
     ],
 }
 

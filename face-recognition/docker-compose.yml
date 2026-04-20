@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  face-recognition:
+    build: .
+    container_name: gamecrm-face-recognition
+    ports:
+      - "8001:8001"    # Laravel llama a http://localhost:8001
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Sin acceso a internet desde el contenedor en producción
+    # (los modelos ya están descargados en la imagen)
